@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>共炉保温编排台</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>共炉保温编排台</h1>
+    <p class="subtitle">
+      炉温初态 20°C，每档 5 分钟；在 20 档以内编排最短升温曲线，
+      让 2～3 种材料分别在各自保温区间内连续达标，末档回到 20°C。
+    </p>
+  </header>
+
+  <main>
+    <section class="card" id="input-card">
+      <div class="card-head">
+        <h2>材料参数</h2>
+        <label class="count-select">
+          材料种类
+          <select id="material-count">
+            <option value="2">2 种</option>
+            <option value="3">3 种</option>
+          </select>
+        </label>
+      </div>
+
+      <form id="schedule-form" novalidate>
+        <div id="materials"></div>
+
+        <div class="executed-box">
+          <h3>已执行档位（可选，用于续炉判定）</h3>
+          <p class="executed-hint">
+            输入 1～20 个已经执行的 5 分钟炉温档位（20～200°C 的整十数），
+            用逗号或空格分隔，例如 <code>40, 60, 80</code>。
+            系统会从初态 20°C 起逐档核验范围、整十度、相邻 ≤20°C 温差及所有材料
+            耐受上限；首个违规档即不予续排。留空则从零编排。
+          </p>
+          <input type="text" id="executed-input" autocomplete="off"
+                 placeholder="留空 = 无执行记录；示例：40, 60, 80, 80, 100" />
+        </div>
+
+        <div class="rules">
+          <h3>约束规则</h3>
+          <ul>
+            <li>保温上/下限：40～180°C 的整十数，下限不高于上限。</li>
+            <li>连续保温时长：5、10 或 15 分钟（即 1～3 个连续档位）。</li>
+            <li>耐受上限：不低于保温上限、至多 200°C 的整十数；所有档位都不得超过任何材料的耐受上限。</li>
+            <li>设定温度为 20～200°C 的整十数；首档与初态 20°C、相邻档位温差均不超过 20°C。</li>
+            <li>不同材料可以共用档位；材料达标后无需继续保温；离开保温区间时未达标进度归零。</li>
+            <li>目标：20 档以内的最短完整曲线；等长时取后续温度序列字典序最小。</li>
+            <li>提供「已执行档位」时：逐档核验通过后从末档温度接续，已用档位计入 20 档上限；首个违规档即不予续排。</li>
+          </ul>
+        </div>
+
+        <p class="form-error" id="form-error" hidden></p>
+        <div class="actions">
+          <button type="submit" id="submit-btn">编排求解</button>
+          <span class="hint">修改任一参数后，旧结果会自动清除。</span>
+        </div>
+      </form>
+    </section>
+
+    <section id="result" hidden>
+      <!-- 成功结果 -->
+      <div id="result-ok" hidden>
+        <section class="card">
+          <h2>编排结果 <span class="badge badge-ok">有解</span></h2>
+          <div class="summary" id="summary"></div>
+          <div class="chart-wrap">
+            <svg id="chart" viewBox="0 0 900 380" role="img"
+                 aria-label="炉温设定曲线"></svg>
+            <ul class="legend" id="legend"></ul>
+          </div>
+          <div id="windows" class="windows"></div>
+          <p class="shared-note" id="shared-note" hidden></p>
+        </section>
+
+        <section class="card">
+          <h2>档位明细</h2>
+          <div class="table-wrap">
+            <table id="steps-table">
+              <thead>
+                <tr>
+                  <th>档位</th>
+                  <th id="th-phase" hidden>阶段</th>
+                  <th>设定温度 (°C)</th>
+                  <th>时长 (分钟)</th>
+                  <th>与上档温差 (°C)</th>
+                  <th>该档用于</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- 无解 / 错误：明确提示，不展示任何部分方案 -->
+      <div id="result-fail" hidden>
+        <section class="card card-fail">
+          <h2><span class="badge badge-fail">无解</span></h2>
+          <p id="fail-reason"></p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>共炉保温编排台 · FastAPI + 原生 HTML/CSS/JS</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

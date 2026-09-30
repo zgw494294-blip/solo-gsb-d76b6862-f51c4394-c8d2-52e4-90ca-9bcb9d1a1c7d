@@ -1,0 +1,8 @@
+services:
+  furnace-planner:
+    build: .
+    image: gonglu-baowen-planner:latest
+    container_name: gonglu-baowen-planner
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
