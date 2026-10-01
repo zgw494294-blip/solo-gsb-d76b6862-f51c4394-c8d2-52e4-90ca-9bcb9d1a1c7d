@@ -12,10 +12,19 @@
     <p class="subtitle">
       炉温初态 20°C，每档 5 分钟；在 20 档以内编排最短升温曲线，
       让 2～3 种材料分别在各自保温区间内连续达标，末档回到 20°C。
+      材料参数可沉淀为<strong>配方</strong>供多个炉次草稿共用；修改配方会联动重算，
+      核准后的炉次方案可<strong>归档冻结</strong>。
     </p>
   </header>
 
+  <nav class="tabs" id="tabs">
+    <button type="button" class="tab active" data-tab="schedule">一键编排（含续炉）</button>
+    <button type="button" class="tab" data-tab="recipes">材料配方库</button>
+    <button type="button" class="tab" data-tab="drafts">炉次草稿 / 归档</button>
+  </nav>
+
   <main>
+    <div class="tab-panel" id="panel-schedule">
     <section class="card" id="input-card">
       <div class="card-head">
         <h2>材料参数</h2>
@@ -59,9 +68,113 @@
         <p class="form-error" id="form-error" hidden></p>
         <div class="actions">
           <button type="submit" id="submit-btn">编排求解</button>
-          <span class="hint">修改任一参数后，旧结果会自动清除。</span>
+          <span class="hint">修改任一参数后，旧结果会自动清除。此页为即时试算，不保存任何数据；需要沉淀请用「材料配方库」。</span>
         </div>
       </form>
+    </section>
+    </div>
+
+    <!-- ================= 材料配方库 ================= -->
+    <div class="tab-panel" id="panel-recipes" hidden>
+      <section class="card">
+        <div class="card-head">
+          <h2 id="recipe-form-title">新建材料配方</h2>
+          <button type="button" class="btn-link" id="recipe-cancel" hidden>取消编辑</button>
+        </div>
+        <p class="hint">
+          配方沿用与一键编排完全一致的材料字段和校验。整份修改（PUT）后，
+          所有引用它的<strong>未归档炉次</strong>会在同一事务内一起重算、版本 +1；非法修改不会改动任何数据。
+        </p>
+        <form id="recipe-form" novalidate>
+          <div class="fields fields-recipe">
+            <label class="field">名称（可留空）
+              <input type="text" id="r-name" maxlength="20" placeholder="材料1" />
+            </label>
+            <label class="field">保温下限 °C
+              <select id="r-low"></select>
+            </label>
+            <label class="field">保温上限 °C
+              <select id="r-high"></select>
+            </label>
+            <label class="field">连续保温时长
+              <select id="r-duration"></select>
+            </label>
+            <label class="field">耐受上限 °C
+              <select id="r-tolerance"></select>
+            </label>
+          </div>
+          <p class="form-error" id="recipe-error" hidden></p>
+          <div class="actions">
+            <button type="submit" id="recipe-submit">保存配方</button>
+            <span class="hint" id="recipe-save-hint">保存后即可在炉次草稿中引用。</span>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>配方库</h2>
+          <button type="button" class="btn-link" id="refresh-recipes">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table id="recipe-table">
+            <thead>
+              <tr>
+                <th>ID</th><th>名称</th><th>保温区间 (°C)</th>
+                <th>时长 (分钟)</th><th>耐受上限 (°C)</th><th>被炉次引用</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint" id="recipe-empty" hidden>还没有配方，先在上方创建一个。</p>
+      </section>
+    </div>
+
+    <!-- ================= 炉次草稿与归档 ================= -->
+    <div class="tab-panel" id="panel-drafts" hidden>
+      <section class="card">
+        <div class="card-head">
+          <h2>新建炉次草稿</h2>
+          <button type="button" class="btn-link" id="refresh-drafts">刷新</button>
+        </div>
+        <p class="hint">
+          按顺序选择 2～3 个<strong>互不相同</strong>的现有配方；引用创建后<strong>不可修改</strong>。
+          炉次从 20°C 空记录求解，版本从 <strong>v1</strong> 开始；即使无解也会保存并记录原因。
+        </p>
+        <form id="draft-form" novalidate>
+          <div class="fields fields-draft">
+            <label class="field">第 1 个配方
+              <select id="draft-r1"></select>
+            </label>
+            <label class="field">第 2 个配方
+              <select id="draft-r2"></select>
+            </label>
+            <label class="field">第 3 个配方（留空 = 只用 2 种）
+              <select id="draft-r3"></select>
+            </label>
+          </div>
+          <p class="form-error" id="draft-error" hidden></p>
+          <div class="actions">
+            <button type="submit">创建炉次草稿</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>炉次列表</h2>
+        <p class="hint">
+          「核准归档」会携带你当前查看的版本：版本已过期返回 409、当前无解返回 422，均不改变状态；
+          成功后冻结当时的材料参数、草稿版本与完整求解结果，后续配方修改只影响未归档炉次。
+        </p>
+        <div id="draft-list"></div>
+        <p class="hint" id="draft-empty" hidden>还没有炉次草稿。</p>
+      </section>
+    </div>
+
+    <!-- 查看炉次时的上下文条（版本/状态/归档操作） -->
+    <section class="card result-context" id="result-context" hidden>
+      <div id="result-context-body" class="ctx-body"></div>
     </section>
 
     <section id="result" hidden>
@@ -109,10 +222,13 @@
     </section>
   </main>
 
+  <div id="toast" class="toast" hidden></div>
+
   <footer>
-    <span>共炉保温编排台 · FastAPI + 原生 HTML/CSS/JS</span>
+    <span>共炉保温编排台 · FastAPI + 原生 HTML/CSS/JS · 数据保存在服务器 SQLite（Docker Compose 卷）</span>
   </footer>
 
   <script src="/static/app.js"></script>
+  <script src="/static/manage.js"></script>
 </body>
 </html>

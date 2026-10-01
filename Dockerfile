@@ -12,6 +12,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY static ./static
 
+# SQLite 数据目录：由 compose 命名卷挂载，重启/重建后数据仍在
+RUN mkdir -p /data
+VOLUME ["/data"]
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

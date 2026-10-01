@@ -8,8 +8,17 @@
 逐档核验合法后，以最后已执行温度接续，在 20 档总上限内编排最短且回到
 20°C 的后续曲线；首个违规档即拒绝续排。
 
+此外支持把单种材料参数沉淀为**材料配方**（沿用相同字段与校验），让多个
+**炉次草稿**按顺序引用 2～3 个不同的现有配方 ID 共用；配方整份修改时，所有
+引用它的**未归档**炉次在同一事务内一起重算、版本 +1（无解炉次仍保存并记录
+原因、清除旧曲线）。核准后的炉次可**归档冻结**当时的材料参数、草稿版本与
+完整求解结果；数据保存在服务器 SQLite，经 Docker Compose 命名卷持久化，
+重启/重建容器后仍可读取。
+
 - 后端：Python + FastAPI（求解核心见 `app/solver.py`，纯标准库 BFS）
 - 前端：原生 HTML / CSS / JavaScript（`static/`，无任何前端构建与框架）
+- 存储：SQLite（WAL，单连接 + 全局写锁串行化），默认文件 `/data/furnace.db`
+  （可用环境变量 `DB_PATH` 覆盖）
 
 ## 一条命令启动
 
@@ -35,10 +44,13 @@ docker compose down
 
 ### 不用 Docker（可选）
 
+裸跑时若 `/data` 不可写，数据库会落到仓库下 `data/furnace.db`；
+也可用 `DB_PATH` 显式指定：
+
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+DB_PATH=./data/furnace.db uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## 业务规则
@@ -270,20 +282,138 @@ curl -sS -X POST http://localhost:8000/api/schedule \
 时返回 HTTP 422，`detail` 为中文错误说明。响应中**不会**附带任何部分
 曲线。
 
+## 材料配方与炉次草稿（多炉次共用、联动重算、归档）
+
+「一键编排」（`/api/schedule`）是不落库的即时试算；需要多个炉次共用材料
+参数时，使用下面的配方 / 炉次接口，数据全部保存在服务器 SQLite 中。
+
+### 模型与规则
+
+- **配方 Recipe** = 单种材料参数，字段与校验和 `/api/schedule` 的材料完全
+  一致：`name`（可空，≤20 字符）、`holdLow`/`holdHigh`（40～180 整十，
+  下限不高于上限）、`duration`（5/10/15）、`tolerance`（≥上限、≤200 的
+  整十数）。
+- **炉次草稿 Draft**：按**顺序**引用 **2～3 个互不相同**的**现有**配方 ID
+  （`recipeIds`）。引用关系创建后**不可修改**；炉次从 **20°C 空记录**
+  （无已执行档）求解，版本**从 v1 开始**。
+- **整份修改配方（PUT）**：先校验新参数（非法直接 422，**不改变任何数据**），
+  合法后在一个数据库事务内更新配方，并把**所有引用它的未归档炉次一起重算、
+  版本各 +1**。有解则保存完整结果；**无解草稿仍保存**，但**清除旧曲线**
+  （`result` 置空、`solvable=false`）并记录中文 `reason`。
+- **核准归档**：请求必须携带所查看的草稿版本 `version`（乐观并发）：
+  - 版本与当前不一致（期间配方被改过）→ **HTTP 409**，不改状态；
+  - 版本一致但当前**无解** → **HTTP 422**，不改状态；
+  - 成功 → 状态变 `archived`，**冻结**归档当时的材料参数、草稿版本
+    （`archivedVersion`）和完整求解结果。此后配方再被修改只重算未归档炉次，
+    已归档炉次（含曲线）完全不变。
+- **并发顺序**：所有写操作由服务端同一把锁串行化，配方修改与归档按取得锁
+  的先后顺序整体生效；每个炉次行把「材料参数快照 + 结果/无解原因 + 版本」
+  一起原子更新，读取**绝不会**混用新参数与旧结果。
+
+### 炉次读取结构（`GET /api/drafts/{id}`）
+
+含状态、当前材料参数、版本、完整结果或无解原因：
+
+```json
+{
+  "id": 1,
+  "status": "draft",
+  "version": 2,
+  "recipeIds": [1, 2],
+  "solvable": true,
+  "reason": null,
+  "materials": [
+    {"name": "钢板", "holdLow": 60, "holdHigh": 100, "duration": 10, "tolerance": 150},
+    {"name": "钢管", "holdLow": 80, "holdHigh": 120, "duration": 5, "tolerance": 160}
+  ],
+  "result": { "solvable": true, "temperatures": [40, 60, 80, 60, 40, 20], "...": "与 /api/schedule 成功响应结构一致" },
+  "archivedVersion": null,
+  "createdAt": "…", "updatedAt": "…", "archivedAt": null
+}
+```
+
+### 配方 API 示例
+
+```bash
+# 创建配方（HTTP 201）
+curl -sS -X POST http://localhost:8000/api/recipes \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"钢板","holdLow":60,"holdHigh":100,"duration":10,"tolerance":150}'
+
+# 列表 / 单个读取（列表中 draftIds 为当前引用该配方的炉次）
+curl -sS http://localhost:8000/api/recipes
+curl -sS http://localhost:8000/api/recipes/1
+
+# 整份修改：原子联动重算所有未归档引用炉次（非法参数 422 且零改动）
+curl -sS -X PUT http://localhost:8000/api/recipes/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"钢板改","holdLow":70,"holdHigh":100,"duration":10,"tolerance":150}'
+# {"recipe": {...}, "recalculatedDrafts": [{"id":1,"version":2,"solvable":true,"reason":null}], "skippedArchived": 0}
+```
+
+### 炉次草稿 / 归档 API 示例
+
+```bash
+# 创建草稿：2～3 个不同的现有配方 ID，按顺序引用（HTTP 201；无解也会保存）
+curl -sS -X POST http://localhost:8000/api/drafts \
+  -H 'Content-Type: application/json' -d '{"recipeIds":[1,2]}'
+
+curl -sS http://localhost:8000/api/drafts          # 列表（不含 result 大字段）
+curl -sS http://localhost:8000/api/drafts/1        # 单个：状态/参数/版本/结果或原因
+
+# 核准归档：携带所查看版本
+curl -sS -X POST http://localhost:8000/api/drafts/1/archive \
+  -H 'Content-Type: application/json' -d '{"version":2}'
+
+# 期间配方被改过、版本已过期 → 409
+# {"detail":"所查看的版本 v1 已过期，炉次 1 当前为 v2，请刷新查看最新结果后再归档。"}
+# 当前版本无解 → 422（状态保持 draft，result 保持为空）
+# 成功 → 200，status=archived，archivedVersion=2，返回冻结的完整结果
+```
+
+状态码汇总：配方/炉次不存在 → **404**；请求体字段非法 → **422**
+（材料校验中文信息，不写库）；引用 ID 重复/数量不对/引用不存在 → **422**；
+归档版本过期或重复归档 → **409**；归档目标无解 → **422**。
+
+### 页面
+
+顶部三个标签页：
+
+1. **一键编排（含续炉）**：原有即时试算页，行为完全不变（不落库）；
+2. **材料配方库**：创建配方、查看引用炉次、整份修改（保存后提示联动重算
+   了哪些炉次及新版本）；
+3. **炉次草稿 / 归档**：选 2～3 个配方建草稿、查看（复用曲线图与档位明细，
+   上下文条显示状态/版本/冻结参数）、一键核准归档；409/422 以浮层提示并
+   自动刷新到最新版本。
+
+### 数据持久化
+
+SQLite 文件位于容器内 `/data/furnace.db`（`docker-compose.yml` 已配置命名
+卷 `furnace-data`）。执行 `docker compose down` **不会**删除卷；仅
+`docker compose down -v` 才会清空数据。
+
+```bash
+docker compose up --build -d     # 首次
+docker compose restart           # 重启后配方/炉次/归档仍在
+docker compose down && docker compose up --build -d   # 重建容器也保留
+```
+
 ## 目录结构
 
 ```
 .
 ├── app/
 │   ├── __init__.py
-│   ├── main.py        # FastAPI 路由与参数校验
-│   └── solver.py      # 规则常量、校验与 BFS 求解
+│   ├── main.py        # FastAPI 路由与参数校验（schedule / recipes / drafts）
+│   ├── solver.py      # 规则常量、校验与 BFS 求解
+│   └── store.py       # SQLite 持久化：配方/草稿/归档、联动重算与并发事务
 ├── static/
-│   ├── index.html     # 页面
+│   ├── index.html     # 页面（三个标签页）
 │   ├── styles.css     # 样式
-│   └── app.js         # 表单、请求、结果与 SVG 曲线渲染
+│   ├── app.js         # 一键编排表单、求解、结果与 SVG 曲线渲染
+│   └── manage.js      # 配方库、炉次草稿、归档与版本上下文
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml # 命名卷 furnace-data → /data
 ├── requirements.txt
 └── README.md
 ```
