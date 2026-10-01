@@ -301,3 +301,104 @@ footer {
 @media (max-width: 720px) {
   .material-row .fields { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---------- 标签页 ---------- */
+.tabs {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tab {
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tab:hover { background: rgba(255, 255, 255, 0.25); }
+.tab.active { background: #fff; color: var(--brand-dark); font-weight: 600; }
+.tabpanel { display: flex; flex-direction: column; gap: 18px; }
+.tabpanel[hidden] { display: none; }
+
+/* ---------- 按钮 / 提示 ---------- */
+button { font-family: inherit; }
+.btn-secondary {
+  background: #eef2f7;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-secondary:hover { background: #e2e8f0; }
+.btn-small { padding: 4px 10px; font-size: 12px; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.form-ok {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #e9f7ef;
+  border: 1px solid #b6e2c6;
+  color: var(--ok);
+  font-size: 13.5px;
+}
+.empty-hint {
+  margin: 12px 2px 2px;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+}
+.ver-badge {
+  display: inline-block;
+  background: #e8f0f8;
+  border: 1px solid #c3d8ec;
+  color: var(--brand-dark);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 12px;
+}
+.status-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 12px;
+}
+.status-active { background: #e9f7ef; border: 1px solid #b6e2c6; color: var(--ok); }
+.status-archived { background: #f1ecfb; border: 1px solid #d7c8f2; color: #6d3fb0; }
+.text-fail { color: var(--fail); }
+.ts { white-space: nowrap; color: var(--ink-soft); font-size: 12.5px; }
+.row-selected { background: #f2f8fd; }
+
+/* ---------- 炉次引用 / 参数 ---------- */
+.ref-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+}
+.ref-order { min-width: 92px; font-size: 13.5px; color: var(--ink-soft); }
+.ref-row select { flex: 1; }
+.mat-chip {
+  display: block;
+  margin: 4px 0;
+  padding: 4px 10px;
+  background: #f5f8fb;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+/* 配方表单中的独立材料字段网格 */
+#recipe-fields.fields {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  #recipe-fields.fields { grid-template-columns: 1fr 1fr; }
+}

@@ -46,32 +46,37 @@ class Material:
         return self.duration // STEP_MINUTES
 
 
+def validate_material(m: Material, index: int = 0) -> None:
+    """复核单个材料参数；非法时抛出 ValueError（中文信息）。"""
+    tag = f"材料「{m.name}」" if m.name else f"第 {index + 1} 种材料"
+
+    def ok_tens(v: int) -> bool:
+        return isinstance(v, int) and 40 <= v <= 180 and v % TEMP_STEP == 0
+
+    if not ok_tens(m.hold_low) or not ok_tens(m.hold_high):
+        raise ValueError(f"{tag}的保温上、下限必须是 40~180°C 之间的整十数。")
+    if m.hold_low > m.hold_high:
+        raise ValueError(f"{tag}的保温下限不得高于上限。")
+    if m.duration not in VALID_DURATIONS:
+        raise ValueError(f"{tag}的保温时长必须为 5、10 或 15 分钟。")
+    if (
+        not isinstance(m.tolerance, int)
+        or m.tolerance % TEMP_STEP != 0
+        or not (m.hold_high <= m.tolerance <= MAX_TEMP)
+    ):
+        raise ValueError(
+            f"{tag}的耐受上限必须是不低于保温上限（{m.hold_high}°C）、"
+            f"至多 {MAX_TEMP}°C 的整十数。"
+        )
+
+
 def validate_materials(materials: list[Material]) -> None:
-    """复核材料参数；非法时抛出 ValueError（中文信息）。"""
+    """复核整组材料参数；非法时抛出 ValueError（中文信息）。"""
     if not (2 <= len(materials) <= 3):
         raise ValueError("材料数量必须为 2 或 3 种。")
 
     for i, m in enumerate(materials):
-        tag = f"材料「{m.name}」" if m.name else f"第 {i + 1} 种材料"
-
-        def ok_tens(v: int) -> bool:
-            return isinstance(v, int) and 40 <= v <= 180 and v % TEMP_STEP == 0
-
-        if not ok_tens(m.hold_low) or not ok_tens(m.hold_high):
-            raise ValueError(f"{tag}的保温上、下限必须是 40~180°C 之间的整十数。")
-        if m.hold_low > m.hold_high:
-            raise ValueError(f"{tag}的保温下限不得高于上限。")
-        if m.duration not in VALID_DURATIONS:
-            raise ValueError(f"{tag}的保温时长必须是 5、10 或 15 分钟。")
-        if (
-            not isinstance(m.tolerance, int)
-            or m.tolerance % TEMP_STEP != 0
-            or not (m.hold_high <= m.tolerance <= MAX_TEMP)
-        ):
-            raise ValueError(
-                f"{tag}的耐受上限必须是不低于保温上限（{m.hold_high}°C）、"
-                f"至多 {MAX_TEMP}°C 的整十数。"
-            )
+        validate_material(m, i)
 
 
 def _precheck(materials: list[Material]) -> str | None:
